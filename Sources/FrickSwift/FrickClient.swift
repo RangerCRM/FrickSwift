@@ -1960,6 +1960,64 @@ public final class FrickClient: Sendable {
     }
 
 
+    // MARK: - RangerCRM share-notification additions
+
+    ///FIX: register this device's APNs token so the server can deliver share
+    /// push notifications to this user. `deviceId` comes from the active session;
+    /// `platform` is "apns" for iOS. POST /push/registrations.
+    public func registerDevice(token: String, platform: String, environment: String) async throws {
+        let authed = try requireAuthenticatedSession()
+        let body = RegisterDeviceBody(
+            deviceId: authed.deviceId,
+            platform: platform,
+            token: token,
+            environment: environment
+        )
+        var request = URLRequest(url: baseURL.appending(path: "push").appending(path: "registrations"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try encoder.encode(body)
+        authenticate(&request)
+        let (data, response) = try await session.data(for: request)
+        try validate(response, data: data)
+    }
+
+
+    ///FIX: decline (reject) an invitation by token — the recipient rejects a
+    /// pending share. The owner receives a "declined" push; a declined invitation
+    /// can no longer be accepted. POST /share/decline.
+    @discardableResult
+    public func declineInvitation(token: String) async throws -> FrickInvitation {
+        _ = try requireAuthenticatedSession()
+        let body = DeclineInvitationBody(token: token)
+        var request = URLRequest(url: baseURL.appending(path: "share").appending(path: "decline"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try encoder.encode(body)
+        authenticate(&request)
+        let (data, response) = try await session.data(for: request)
+        try validate(response, data: data)
+        return try decoder.decode(DeclineInvitationEnvelope.self, from: data).invitation
+    }
+
+
+    ///FIX: preview an invitation by token WITHOUT redeeming it — drives the
+    /// receiver's Accept/Decline prompt + invitations inbox. GET
+    /// /share/invitation/preview?token=...
+    public func invitationPreview(token: String) async throws -> FrickInvitationPreview {
+        _ = try requireAuthenticatedSession()
+        var components = URLComponents(
+            url: baseURL.appending(path: "share").appending(path: "invitation").appending(path: "preview"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [URLQueryItem(name: "token", value: token)]
+        let request = authenticatedRequest(url: components.url!)
+        let (data, response) = try await session.data(for: request)
+        try validate(response, data: data)
+        return try decoder.decode(InvitationPreviewEnvelope.self, from: data).invitation
+    }
+
+
     public func deleteObject(type: String, id: String) async throws -> Bool {
         _ = try requireAuthenticatedSession()
         let encodedType = type.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? type

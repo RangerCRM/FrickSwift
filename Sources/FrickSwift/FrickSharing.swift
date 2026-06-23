@@ -125,3 +125,66 @@ struct ListGrantsEnvelope: Decodable {
 struct RevokeGrantEnvelope: Decodable {
     let grant: FrickGrant
 }
+
+
+// MARK: - RangerCRM share-notification additions
+
+
+///FIX: body for registerDevice(token:platform:environment:) → POST /push/registrations
+struct RegisterDeviceBody: Encodable {
+    let deviceId: String
+    let platform: String
+    let token: String
+    let environment: String
+}
+
+
+///FIX: body for declineInvitation(token:) → POST /share/decline
+struct DeclineInvitationBody: Encodable {
+    let token: String
+}
+
+
+struct DeclineInvitationEnvelope: Decodable {
+    let invitation: FrickInvitation
+}
+
+
+///FIX: read-only preview of an invitation (from `invitationPreview(token:)`),
+/// rendering the receiver's Accept/Decline prompt + invitations inbox WITHOUT
+/// redeeming. `status` ∈ "pending" | "declined" | "redeemed" | "expired".
+public struct FrickInvitationPreview: Codable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let ownerUserId: String
+    public let recordType: String
+    public let recordId: String
+    public let permission: FrickSharingPermission
+    public let createdAt: String
+    public let expiresAt: String
+    public let status: String
+
+    public init(
+        id: String,
+        ownerUserId: String,
+        recordType: String,
+        recordId: String,
+        permission: FrickSharingPermission,
+        createdAt: String,
+        expiresAt: String,
+        status: String
+    ) {
+        self.id = id
+        self.ownerUserId = ownerUserId
+        self.recordType = recordType
+        self.recordId = recordId
+        self.permission = permission
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+        self.status = status
+    }
+}
+
+
+struct InvitationPreviewEnvelope: Decodable {
+    let invitation: FrickInvitationPreview
+}

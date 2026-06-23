@@ -287,6 +287,103 @@ final class FrickSharingServiceTests: XCTestCase {
         await sharing.refreshGrants()
         await fulfillment(of: [changed], timeout: 1.0)
     }
+
+    // MARK: - RangerCRM additions: registerDevice / decline / invitationPreview
+
+    func testRegisterDeviceSucceedsOnOK() async throws {
+        let sharing = makeSharing(signedInAs: "user-bob")
+        StubShareURLProtocol.enqueueStatus(201, body: "{\"registration\":{}}", for: "/push/registrations")
+
+        try await sharing.registerDevice(apnsToken: "apns-tok-123", environment: "sandbox")
+
+        XCTAssertNil(sharing.lastError)
+    }
+
+    func testRegisterDevicePropagatesErrorAndRecordsLastError() async {
+        let sharing = makeSharing(signedInAs: "user-bob")
+        StubShareURLProtocol.enqueueStatus(401, body: "{}", for: "/push/registrations")
+
+        do {
+            try await sharing.registerDevice(apnsToken: "apns-tok-123")
+            XCTFail("expected registerDevice to throw on 401")
+        } catch {
+            XCTAssertNotNil(sharing.lastError)
+        }
+    }
+
+    func testDeclineSucceedsAndClearsLastError() async throws {
+        let sharing = makeSharing(signedInAs: "user-bob")
+        StubShareURLProtocol.enqueueInvitation(
+            makeInvitation(token: "tok-declined", owner: "user-ada"),
+            for: "/share/decline"
+        )
+
+        try await sharing.decline(token: "tok-declined")
+
+        XCTAssertNil(sharing.lastError)
+        XCTAssertFalse(sharing.isWorking)
+    }
+
+    func testDeclinePropagatesErrorAndRecordsLastError() async {
+        let sharing = makeSharing(signedInAs: "user-bob")
+        StubShareURLProtocol.enqueueStatus(403, body: "{}", for: "/share/decline")
+
+        do {
+            try await sharing.decline(token: "tok-x")
+            XCTFail("expected decline to throw on 403")
+        } catch {
+            XCTAssertNotNil(sharing.lastError)
+            XCTAssertFalse(sharing.isWorking)
+        }
+    }
+
+    func testDeclineViaURLParsesTokenWithInjectedScheme() async throws {
+        let sharing = makeSharing(signedInAs: "user-bob")
+        StubShareURLProtocol.enqueueInvitation(
+            makeInvitation(token: "tok-url", owner: "user-ada"),
+            for: "/share/decline"
+        )
+
+        let url = deepLink.acceptURL(for: "tok-url")!
+        let handled = try await sharing.decline(url: url)
+
+        XCTAssertTrue(handled)
+        XCTAssertNil(sharing.lastError)
+    }
+
+    func testDeclineViaForeignURLReturnsFalse() async throws {
+        let sharing = makeSharing(signedInAs: "user-bob")
+        let handled = try await sharing.decline(url: URL(string: "otherapp://share/accept?token=t")!)
+        XCTAssertFalse(handled, "a non-matching URL should fall through (false), not attempt decline")
+    }
+
+    func testInvitationPreviewDecodesMetadata() async throws {
+        let sharing = makeSharing(signedInAs: "user-bob")
+        StubShareURLProtocol.enqueuePreview(
+            makeInvitationPreview(owner: "user-ada", status: "pending"),
+            for: "/share/invitation/preview"
+        )
+
+        let preview = try await sharing.preview(token: "tok-preview")
+
+        XCTAssertEqual(preview.ownerUserId, "user-ada")
+        XCTAssertEqual(preview.recordType, "Account")
+        XCTAssertEqual(preview.status, "pending")
+        XCTAssertEqual(preview.permission, .write)
+    }
+
+    func testInvitationPreviewViaURLParsesToken() async throws {
+        let sharing = makeSharing(signedInAs: "user-bob")
+        StubShareURLProtocol.enqueuePreview(
+            makeInvitationPreview(owner: "user-ada", status: "declined"),
+            for: "/share/invitation/preview"
+        )
+
+        let url = deepLink.acceptURL(for: "tok-preview")!
+        let preview = try await sharing.preview(url: url)
+
+        XCTAssertEqual(preview?.status, "declined")
+    }
 }
 
 // MARK: - Helpers
@@ -361,6 +458,19 @@ private func makeInvitation(token: String, owner: String) -> FrickInvitation {
     )
 }
 
+private func makeInvitationPreview(owner: String, status: String) -> FrickInvitationPreview {
+    FrickInvitationPreview(
+        id: "inv-1",
+        ownerUserId: owner,
+        recordType: "Account",
+        recordId: "rec-1",
+        permission: .write,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2026-01-15T00:00:00.000Z",
+        status: status
+    )
+}
+
 /// Minimal `URLProtocol` stub serving queued JSON bodies keyed by request path.
 /// Self-contained so this suite doesn't depend on other suites' mocks.
 private final class StubShareURLProtocol: URLProtocol {
@@ -393,6 +503,10 @@ private final class StubShareURLProtocol: URLProtocol {
         enqueueJSON(InvitationEnvelope(invitation: invitation), for: path)
     }
 
+    static func enqueuePreview(_ preview: FrickInvitationPreview, for path: String) {
+        enqueueJSON(PreviewEnvelope(invitation: preview), for: path)
+    }
+
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
@@ -422,5 +536,6 @@ private final class StubShareURLProtocol: URLProtocol {
     private struct GrantEnvelope: Encodable { let grant: FrickGrant }
     private struct InvitationEnvelope: Encodable { let invitation: FrickInvitation }
     private struct ListGrantsEnvelope: Encodable { let grants: [FrickGrant] }
+    private struct PreviewEnvelope: Encodable { let invitation: FrickInvitationPreview }
 }
 #endif

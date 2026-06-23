@@ -306,6 +306,61 @@ public final class FrickSharingService {
         return await accept(token: token)
     }
 
+    // MARK: - Device registration (push)
+
+    ///FIX: register this device's APNs token so the server can deliver share
+    /// push notifications. Call after `registerForRemoteNotifications` yields a
+    /// token (and after sign-in). `platform` is "apns".
+    public func registerDevice(apnsToken: String, environment: String = "production") async throws {
+        do {
+            try await session.client.registerDevice(
+                token: apnsToken, platform: "apns", environment: environment
+            )
+            lastError = nil
+        } catch {
+            lastError = "registerDevice: \(error)"
+            throw error
+        }
+    }
+
+    // MARK: - Invitation preview + decline (recipient)
+
+    ///FIX: preview an invitation by token WITHOUT redeeming — drives the
+    /// Accept/Decline prompt + invitations inbox.
+    public func preview(token: String) async throws -> FrickInvitationPreview {
+        try await session.client.invitationPreview(token: token)
+    }
+
+    ///FIX: preview the invitation carried by an inbound deep-link URL. Returns
+    /// `nil` if the URL doesn't match the configured scheme/host/path.
+    public func preview(url: URL) async throws -> FrickInvitationPreview? {
+        guard let token = deepLink.token(from: url) else { return nil }
+        return try await preview(token: token)
+    }
+
+    ///FIX: decline an invitation by token (recipient rejects the share). The
+    /// owner receives a "declined" push; a declined invitation can't be accepted.
+    public func decline(token: String) async throws {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            _ = try await session.client.declineInvitation(token: token)
+            lastError = nil
+        } catch {
+            lastError = "decline: \(error)"
+            throw error
+        }
+    }
+
+    ///FIX: decline the invitation carried by an inbound deep-link URL. Returns
+    /// `false` if the URL doesn't match the configured scheme/host/path.
+    @discardableResult
+    public func decline(url: URL) async throws -> Bool {
+        guard let token = deepLink.token(from: url) else { return false }
+        try await decline(token: token)
+        return true
+    }
+
     // MARK: - Read helpers (synchronous, for gating share UI)
 
     /// Active grants on a specific record — the owner-side "who has access"
