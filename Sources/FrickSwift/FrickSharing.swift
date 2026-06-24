@@ -70,6 +70,10 @@ public struct FrickGrant: Codable, Sendable, Equatable, Identifiable {
     public let createdAt: String
     public let revokedAt: String?
 
+    ///FIX: owner's login email, enriched server-side onto GET /share/grants for the
+    /// RangerCRM "shared from <email>" cell. Optional — absent on older servers / unknown owners.
+    public let ownerEmail: String?
+
     public init(
         id: String,
         tenantId: String,
@@ -79,7 +83,8 @@ public struct FrickGrant: Codable, Sendable, Equatable, Identifiable {
         granteeUserId: String,
         permission: FrickSharingPermission,
         createdAt: String,
-        revokedAt: String? = nil
+        revokedAt: String? = nil,
+        ownerEmail: String? = nil
     ) {
         self.id = id
         self.tenantId = tenantId
@@ -90,6 +95,7 @@ public struct FrickGrant: Codable, Sendable, Equatable, Identifiable {
         self.permission = permission
         self.createdAt = createdAt
         self.revokedAt = revokedAt
+        self.ownerEmail = ownerEmail
     }
 }
 

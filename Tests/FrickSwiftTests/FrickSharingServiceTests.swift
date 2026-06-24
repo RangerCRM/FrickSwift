@@ -384,6 +384,22 @@ final class FrickSharingServiceTests: XCTestCase {
 
         XCTAssertEqual(preview?.status, "declined")
     }
+
+
+    func testGrantCarriesOwnerEmailFromServer() async {
+        let sharing = makeSharing(signedInAs: "user-bob")
+        StubShareURLProtocol.enqueueGrants(
+            [makeGrant(id: "g1", owner: "user-ada", grantee: "user-bob", ownerEmail: "ada@example.com")],
+            for: "/share/grants"
+        )
+
+        await sharing.refreshGrants()
+
+        XCTAssertEqual(
+            sharing.granteeAccess(forRecordType: "Account", recordId: "rec-1")?.ownerEmail,
+            "ada@example.com"
+        )
+    }
 }
 
 // MARK: - Helpers
@@ -429,7 +445,8 @@ private func makeGrant(
     grantee: String,
     recordType: String = "Account",
     recordId: String = "rec-1",
-    revokedAt: String? = nil
+    revokedAt: String? = nil,
+    ownerEmail: String? = nil
 ) -> FrickGrant {
     FrickGrant(
         id: id,
@@ -440,7 +457,8 @@ private func makeGrant(
         granteeUserId: grantee,
         permission: .write,
         createdAt: "2026-01-01T00:00:00.000Z",
-        revokedAt: revokedAt
+        revokedAt: revokedAt,
+        ownerEmail: ownerEmail
     )
 }
 
