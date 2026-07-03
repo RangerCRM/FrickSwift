@@ -79,6 +79,13 @@ public struct FrickGrant: Codable, Sendable, Equatable, Identifiable {
     /// unknown grantees.
     public let granteeEmail: String?
 
+    ///FIX: display names, enriched server-side onto GET /share/grants — the user's
+    /// RangerCRM Profile first/last name, falling back to the auth account's
+    /// displayName. Optional — absent on older servers / unknown users. UIs show
+    /// `name ?? email ?? userId`.
+    public let ownerName: String?
+    public let granteeName: String?
+
     public init(
         id: String,
         tenantId: String,
@@ -90,7 +97,9 @@ public struct FrickGrant: Codable, Sendable, Equatable, Identifiable {
         createdAt: String,
         revokedAt: String? = nil,
         ownerEmail: String? = nil,
-        granteeEmail: String? = nil
+        granteeEmail: String? = nil,
+        ownerName: String? = nil,
+        granteeName: String? = nil
     ) {
         self.id = id
         self.tenantId = tenantId
@@ -103,6 +112,8 @@ public struct FrickGrant: Codable, Sendable, Equatable, Identifiable {
         self.revokedAt = revokedAt
         self.ownerEmail = ownerEmail
         self.granteeEmail = granteeEmail
+        self.ownerName = ownerName
+        self.granteeName = granteeName
     }
 }
 
