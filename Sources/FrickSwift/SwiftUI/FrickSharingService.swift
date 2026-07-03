@@ -259,6 +259,24 @@ public final class FrickSharingService {
 
     // MARK: - Recipient verbs
 
+    ///FIX: leave a share the signed-in user RECEIVED — removes their own grant
+    /// via the grantee-only `POST /share/grants/:id/leave` route, then refreshes
+    /// the cache so the row leaves `grants`. Owners take access back with
+    /// ``revoke(grantId:)``; the two stay distinct verbs because the server
+    /// authorises them differently (owner vs. grantee).
+    public func leave(grantId: String) async throws {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            _ = try await session.client.leaveGrant(grantId: grantId)
+            lastError = nil
+            await refreshGrants()
+        } catch {
+            lastError = "leave: \(error)"
+            throw error
+        }
+    }
+
     /// Accept a raw invitation token. Returns a ``FrickShareAcceptResult``
     /// describing the outcome — never throws, because the deep-link handler
     /// surfaces both success and failure through the same UI. When signed out,

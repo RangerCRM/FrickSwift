@@ -1960,6 +1960,27 @@ public final class FrickClient: Sendable {
     }
 
 
+    ///FIX: leave a share — the GRANTEE removes their own grant. Owners revoke
+    /// via `revokeGrant(grantId:)` (DELETE, owner-only); this hits the
+    /// grantee-only `POST /share/grants/:id/leave` route, which also pushes the
+    /// removal delta so the leaving device's subscription drops the row live.
+    @discardableResult
+    public func leaveGrant(grantId: String) async throws -> FrickGrant {
+        _ = try requireAuthenticatedSession()
+        let encoded = grantId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? grantId
+        let url = baseURL
+            .appending(path: "share")
+            .appending(path: "grants")
+            .appending(path: encoded)
+            .appending(path: "leave")
+        var request = authenticatedRequest(url: url)
+        request.httpMethod = "POST"
+        let (data, response) = try await session.data(for: request)
+        try validate(response, data: data)
+        return try decoder.decode(RevokeGrantEnvelope.self, from: data).grant
+    }
+
+
     // MARK: - RangerCRM share-notification additions
 
     ///FIX: register this device's APNs token so the server can deliver share
