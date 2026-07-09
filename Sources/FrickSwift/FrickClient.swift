@@ -2039,6 +2039,44 @@ public final class FrickClient: Sendable {
     }
 
 
+    ///FIX: list every invitation the signed-in user has SENT, newest first,
+    /// each with a server-computed `status` (pending / redeemed / declined /
+    /// canceled / expired) and, where redeemed, the redeemer's email. Powers
+    /// the sender's "Waiting on Others" pending-share panel. GET
+    /// /share/invitations.
+    public func listSentInvitations() async throws -> [FrickInvitation] {
+        _ = try requireAuthenticatedSession()
+        let request = authenticatedRequest(
+            url: baseURL.appending(path: "share").appending(path: "invitations")
+        )
+        let (data, response) = try await session.data(for: request)
+        try validate(response, data: data)
+        return try decoder.decode(ListSentInvitationsEnvelope.self, from: data).invitations
+    }
+
+
+    ///FIX: cancel a pending invitation the signed-in user SENT. Owner-only —
+    /// the server marks the invitation declined-by-its-owner so the token can
+    /// no longer be redeemed. Idempotent for already-declined invitations;
+    /// rejects already-redeemed ones (revoke the grant instead). POST
+    /// /share/invitations/cancel.
+    @discardableResult
+    public func cancelInvitation(id: String) async throws -> FrickInvitation {
+        _ = try requireAuthenticatedSession()
+        let body = CancelInvitationBody(id: id)
+        var request = URLRequest(
+            url: baseURL.appending(path: "share").appending(path: "invitations").appending(path: "cancel")
+        )
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try encoder.encode(body)
+        authenticate(&request)
+        let (data, response) = try await session.data(for: request)
+        try validate(response, data: data)
+        return try decoder.decode(CancelInvitationEnvelope.self, from: data).invitation
+    }
+
+
     public func deleteObject(type: String, id: String) async throws -> Bool {
         _ = try requireAuthenticatedSession()
         let encodedType = type.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? type

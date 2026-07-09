@@ -146,6 +146,12 @@ public final class FrickSharingService {
     /// reset to empty on ``reset()``. Observable — SwiftUI re-renders on change.
     public private(set) var grants: [FrickGrant] = []
 
+    ///FIX: every invitation the signed-in user has SENT, newest first, each
+    /// carrying a server-computed `status` — the sender's pending/redeemed/
+    /// canceled history. Populated by ``refreshSentInvitations()``; reset to
+    /// empty on ``reset()``. Observable — SwiftUI re-renders on change.
+    public private(set) var sentInvitations: [FrickInvitation] = []
+
     /// `true` once ``refreshGrants()`` has completed at least once for the
     /// current session. Gate a loading spinner vs. empty-state on this.
     public private(set) var hasLoaded: Bool = false
@@ -201,9 +207,30 @@ public final class FrickSharingService {
         }
     }
 
+    ///FIX: hydrate ``sentInvitations`` from the server via
+    /// `listSentInvitations`. Same contract as ``refreshGrants()``:
+    /// idempotent, safe on every session change, clears the cache when
+    /// signed out. Kept separate from the grants refresh so screens that
+    /// only need one list don't pay for both round-trips.
+    public func refreshSentInvitations() async {
+        guard session.session != nil else {
+            sentInvitations = []
+            return
+        }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            sentInvitations = try await session.client.listSentInvitations()
+            lastError = nil
+        } catch {
+            lastError = "refreshSentInvitations: \(error)"
+        }
+    }
+
     /// Clear all in-memory state. Call on sign-out.
     public func reset() {
         grants = []
+        sentInvitations = []
         hasLoaded = false
         lastError = nil
         pendingAcceptToken = nil
@@ -235,9 +262,29 @@ public final class FrickSharingService {
             }
             lastError = nil
             await refreshGrants()
+            ///FIX: a fresh invitation must appear in the sender's pending
+            /// list immediately, not on the next screen open.
+            await refreshSentInvitations()
             return url
         } catch {
             lastError = "invite: \(error)"
+            throw error
+        }
+    }
+
+    ///FIX: cancel a pending invitation the signed-in user SENT (owner-only),
+    /// then refresh ``sentInvitations`` so the row flips to "canceled".
+    /// Composes `cancelInvitation`. The recipient's queued token stops being
+    /// redeemable the moment this returns.
+    public func cancelInvitation(id: String) async throws {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            _ = try await session.client.cancelInvitation(id: id)
+            lastError = nil
+            await refreshSentInvitations()
+        } catch {
+            lastError = "cancelInvitation: \(error)"
             throw error
         }
     }

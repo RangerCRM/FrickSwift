@@ -27,6 +27,22 @@ public struct FrickInvitation: Codable, Sendable, Equatable, Identifiable {
     public let redeemedAt: String?
     public let redeemedByUserId: String?
 
+    ///FIX: declined/canceled bookkeeping — set when the recipient declines
+    /// (`declinedByUserId != ownerUserId`) or the owner cancels
+    /// (`declinedByUserId == ownerUserId`). Optional — absent on older servers.
+    public let declinedAt: String?
+    public let declinedByUserId: String?
+
+    ///FIX: computed lifecycle from GET /share/invitations —
+    /// "pending" | "redeemed" | "declined" | "canceled" | "expired".
+    /// Optional — only the sent-invitations list endpoint sets it.
+    public let status: String?
+
+    ///FIX: redeemer's login email, enriched server-side onto
+    /// GET /share/invitations so the sender can see WHO accepted.
+    /// Optional — absent while pending / on older servers.
+    public let redeemedByEmail: String?
+
     public init(
         id: String,
         tenantId: String,
@@ -38,7 +54,11 @@ public struct FrickInvitation: Codable, Sendable, Equatable, Identifiable {
         createdAt: String,
         expiresAt: String,
         redeemedAt: String? = nil,
-        redeemedByUserId: String? = nil
+        redeemedByUserId: String? = nil,
+        declinedAt: String? = nil,
+        declinedByUserId: String? = nil,
+        status: String? = nil,
+        redeemedByEmail: String? = nil
     ) {
         self.id = id
         self.tenantId = tenantId
@@ -51,6 +71,10 @@ public struct FrickInvitation: Codable, Sendable, Equatable, Identifiable {
         self.expiresAt = expiresAt
         self.redeemedAt = redeemedAt
         self.redeemedByUserId = redeemedByUserId
+        self.declinedAt = declinedAt
+        self.declinedByUserId = declinedByUserId
+        self.status = status
+        self.redeemedByEmail = redeemedByEmail
     }
 }
 
@@ -176,7 +200,9 @@ struct DeclineInvitationEnvelope: Decodable {
 
 ///FIX: read-only preview of an invitation (from `invitationPreview(token:)`),
 /// rendering the receiver's Accept/Decline prompt + invitations inbox WITHOUT
-/// redeeming. `status` ∈ "pending" | "declined" | "redeemed" | "expired".
+/// redeeming. `status` ∈ "pending" | "declined" | "canceled" | "redeemed" |
+/// "expired" — ///FIX: "canceled" added; the server reports it when the
+/// invitation was declined by its own owner (sender-side cancel).
 public struct FrickInvitationPreview: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public let ownerUserId: String
@@ -211,4 +237,24 @@ public struct FrickInvitationPreview: Codable, Sendable, Equatable, Identifiable
 
 struct InvitationPreviewEnvelope: Decodable {
     let invitation: FrickInvitationPreview
+}
+
+
+// MARK: - RangerCRM sent-invitations additions
+
+
+///FIX: envelope for listSentInvitations() → GET /share/invitations
+struct ListSentInvitationsEnvelope: Decodable {
+    let invitations: [FrickInvitation]
+}
+
+
+///FIX: body for cancelInvitation(id:) → POST /share/invitations/cancel
+struct CancelInvitationBody: Encodable {
+    let id: String
+}
+
+
+struct CancelInvitationEnvelope: Decodable {
+    let invitation: FrickInvitation
 }
