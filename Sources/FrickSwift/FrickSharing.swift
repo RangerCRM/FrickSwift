@@ -213,6 +213,13 @@ public struct FrickInvitationPreview: Codable, Sendable, Equatable, Identifiable
     public let expiresAt: String
     public let status: String
 
+    ///FIX: the SENDER's display name + login email, enriched server-side onto
+    /// GET /share/invitation/preview so the receiver can see WHO invited them
+    /// before accepting (the "Waiting on You" row). Optional — absent on older
+    /// servers / unknown owners. UIs show `ownerName ?? ownerEmail`.
+    public let ownerName: String?
+    public let ownerEmail: String?
+
     public init(
         id: String,
         ownerUserId: String,
@@ -221,7 +228,9 @@ public struct FrickInvitationPreview: Codable, Sendable, Equatable, Identifiable
         permission: FrickSharingPermission,
         createdAt: String,
         expiresAt: String,
-        status: String
+        status: String,
+        ownerName: String? = nil,
+        ownerEmail: String? = nil
     ) {
         self.id = id
         self.ownerUserId = ownerUserId
@@ -231,6 +240,8 @@ public struct FrickInvitationPreview: Codable, Sendable, Equatable, Identifiable
         self.createdAt = createdAt
         self.expiresAt = expiresAt
         self.status = status
+        self.ownerName = ownerName
+        self.ownerEmail = ownerEmail
     }
 }
 
