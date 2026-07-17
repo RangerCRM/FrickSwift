@@ -100,6 +100,27 @@ public final class FrickSessionManager {
         session = result.session
     }
 
+    /// Sign in with Apple. Delegates to `FrickClient.signInWithApple`, which
+    /// posts the identity token to `/auth/apple/verify` and installs (and
+    /// Keychain-persists) the returned session. Pass Apple's `fullName` when
+    /// present — the system only provides it on the very first sign-in.
+    /// Returns the full result so callers can branch on `isNewUser`.
+    @discardableResult
+    public func signInWithApple(
+        identityToken: String,
+        fullName: AppleFullName? = nil
+    ) async throws -> SignInWithAppleResult {
+        isAuthenticating = true
+        defer { isAuthenticating = false }
+
+        let result = try await client.signInWithApple(
+            identityToken: identityToken,
+            fullName: fullName
+        )
+        session = result.session
+        return result
+    }
+
     /// Server-side logout — invalidates the session token, then clears local
     /// state (in the client, which purges the Keychain). Network errors are
     /// swallowed by `FrickClient.logout`: the user pressed Sign Out, they're
