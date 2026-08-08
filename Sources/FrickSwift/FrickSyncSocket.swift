@@ -916,6 +916,13 @@ public actor FrickSyncSocket {
     private let sleepFor: @Sendable (UInt64) async throws -> Void
     private let descriptor: FrickSchemaDescriptorValues
 
+    /// Phase 4b write-on-ingest. When present, every ingested object
+    /// snapshot/delta/removal is mirrored to the local cache so a client with no
+    /// live sync still has the complete on-device dataset. `nil` (the default)
+    /// preserves the pre-Phase-4b behavior — in-memory only, nothing persisted.
+    /// `FrickClient.connectSync` injects one built from its `storage`.
+    private let localObjectSink: FrickLocalObjectSink?
+
     /// Telemetry runtime. Defaults to the no-op runtime so behavior is
     /// unchanged unless a runtime is supplied (mirrors `FrickClient`). The
     /// WS sync loop emits an OTEL-style span on connect/close plus frame
@@ -986,7 +993,8 @@ public actor FrickSyncSocket {
         },
         schemaHash: String = FrickSchema.schemaHash,
         descriptor: FrickSchemaDescriptorValues = .foundation,
-        telemetry: any FrickClientTelemetryRuntime = FrickNoopClientTelemetryRuntime()
+        telemetry: any FrickClientTelemetryRuntime = FrickNoopClientTelemetryRuntime(),
+        storage: FrickStorage? = nil
     ) {
         self.baseURL = baseURL
         self.sessionToken = sessionToken
@@ -998,6 +1006,7 @@ public actor FrickSyncSocket {
         self.schemaHash = schemaHash
         self.descriptor = descriptor
         self.telemetry = telemetry
+        self.localObjectSink = storage.map(FrickLocalObjectSink.init(storage:))
     }
 
     // MARK: Public surface
@@ -1573,6 +1582,11 @@ public actor FrickSyncSocket {
                 records.append(decoded)
             }
         }
+        // Phase 4b: mirror the authoritative snapshot to the local cache before
+        // fanning it out — reconcile each spanned type (upsert + drop absent
+        // rows) so `loadAllObjects` returns the complete current dataset.
+        localObjectSink?.applySnapshot(records)
+
         // Surface as the authoritative full set so stores reconcile to it
         // (dropping rows deleted while disconnected), rather than a pure merge
         // that would leave such rows lingering (native-swift-5).
@@ -1607,6 +1621,8 @@ public actor FrickSyncSocket {
             }
         }
         if !objectRecords.isEmpty {
+            // Phase 4b: upsert each delta row into the local cache before fan-out.
+            localObjectSink?.applyDelta(objectRecords)
             broadcast(.objectsDelta(records: objectRecords, cursor: cursor))
         }
         // Object removals (FR-142/FR-144): the gateway carries a `removed`
@@ -1624,6 +1640,9 @@ public actor FrickSyncSocket {
             }
         }
         if !removals.isEmpty {
+            // Phase 4b: drop the removed rows from the local cache before fan-out
+            // so a delete wins over its own back-compat tombstone upsert above.
+            localObjectSink?.applyRemovals(removals)
             broadcast(.objectsRemoved(removed: removals, cursor: cursor))
         }
         let eventArray = map["events"]?.arrayValue ?? []

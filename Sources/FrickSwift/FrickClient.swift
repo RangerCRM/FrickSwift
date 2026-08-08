@@ -432,6 +432,25 @@ public struct PendingBlob: Codable, Equatable, Sendable {
 public protocol FrickStorage: AnyObject, Sendable {
     func loadObjectData(type: String, id: String) throws -> Data?
     func saveObjectData(type: String, id: String, data: Data, version: Int) throws
+    /// Local-only persistence (Phase 4b). Upsert a socket-delivered object row
+    /// into the local cache WITHOUT disturbing its tracked `version`. `data` is
+    /// the canonical socket-record form — a flat JSON object of the record's
+    /// stringified `[String: String]` fields (see `FrickLocalObjectSink`). This
+    /// is distinct from `saveObjectData(... version:)`, which the REST
+    /// `writeObject`/`fetchObjects` paths use to stamp an authoritative server
+    /// version: the sync socket carries no per-object version, so ingest must
+    /// leave any version a prior `writeObject` recorded intact (a fresh row
+    /// gets version 0). Default no-op keeps non-SQLite/test conformers building.
+    func upsertIngestedObject(type: String, id: String, data: Data) throws
+    /// Local-only persistence (Phase 4b). Delete a single cached object row by
+    /// `(type, id)` — the `.objectsRemoved` ingest path. Default no-op.
+    func deleteObjectData(type: String, id: String) throws
+    /// Local-only persistence (Phase 4b). Reconcile a type to an authoritative
+    /// snapshot: delete every cached row of `type` whose id is NOT in
+    /// `keepingIds`, so a row deleted while disconnected (absent from the
+    /// reconnect snapshot, generating no removal event) finally leaves the
+    /// cache instead of lingering as a stale row. Default no-op.
+    func deleteObjectsOfType(_ type: String, keepingIds: [String]) throws
     /// FR-2. Read back the locally-cached server version for an object,
     /// used by `FrickClient.writeObject` to auto-resolve `expectedVersion`
     /// when the caller doesn't pass one. Returns `nil` if the object has
@@ -472,6 +491,17 @@ public extension FrickStorage {
     func loadObjectVersion(type: String, id: String) throws -> Int? {
         nil
     }
+
+    /// Default no-op so pre-Phase-4b conformers (e.g. test doubles, non-SQLite
+    /// stores) keep compiling. Concrete on-device storages SHOULD override to
+    /// enable the write-on-ingest local mirror.
+    func upsertIngestedObject(type: String, id: String, data: Data) throws {}
+
+    /// Default no-op — see `upsertIngestedObject`.
+    func deleteObjectData(type: String, id: String) throws {}
+
+    /// Default no-op — see `upsertIngestedObject`.
+    func deleteObjectsOfType(_ type: String, keepingIds: [String]) throws {}
 }
 
 public final class FrickSQLiteStorage: FrickStorage, @unchecked Sendable {
@@ -588,6 +618,59 @@ public final class FrickSQLiteStorage: FrickStorage, @unchecked Sendable {
             VALUES (?, ?, ?, ?)
             """,
             bindings: [.text(type), .text(id), .data(data), .int(version)]
+        )
+    }
+
+    /// Local-only persistence (Phase 4b). Upsert a socket-delivered row while
+    /// PRESERVING any existing `version`. The `ON CONFLICT ... DO UPDATE SET
+    /// json = excluded.json` clause rewrites only the payload, so a version a
+    /// prior `writeObject` stamped (used by `loadObjectVersion` to auto-resolve
+    /// `if-match`) survives the echo delta that follows the write. A brand-new
+    /// row — one only ever seen over the socket — is inserted at version 0
+    /// (the sync frame carries no per-object version to stamp).
+    public func upsertIngestedObject(type: String, id: String, data: Data) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try run(
+            """
+            INSERT INTO local_objects (object_type, object_id, json, version)
+            VALUES (?, ?, ?, 0)
+            ON CONFLICT(object_type, object_id) DO UPDATE SET json = excluded.json
+            """,
+            bindings: [.text(type), .text(id), .data(data)]
+        )
+    }
+
+    /// Local-only persistence (Phase 4b). Delete one cached row by PK.
+    public func deleteObjectData(type: String, id: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try run(
+            "DELETE FROM local_objects WHERE object_type = ? AND object_id = ?",
+            bindings: [.text(type), .text(id)]
+        )
+    }
+
+    /// Local-only persistence (Phase 4b). Snapshot reconciliation: delete every
+    /// row of `type` whose id is NOT in `keepingIds`. An empty `keepingIds`
+    /// deletes all rows of the type. Only rows of `type` are touched — sibling
+    /// types are never affected. The id list is bound as parameters (never
+    /// string-interpolated) so ids with quotes/commas can't break the SQL.
+    public func deleteObjectsOfType(_ type: String, keepingIds: [String]) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !keepingIds.isEmpty else {
+            try run(
+                "DELETE FROM local_objects WHERE object_type = ?",
+                bindings: [.text(type)]
+            )
+            return
+        }
+
+        let placeholders = Array(repeating: "?", count: keepingIds.count).joined(separator: ", ")
+        try run(
+            "DELETE FROM local_objects WHERE object_type = ? AND object_id NOT IN (\(placeholders))",
+            bindings: [.text(type)] + keepingIds.map(SQLiteBinding.text)
         )
     }
 
@@ -1236,7 +1319,8 @@ public final class FrickClient: Sendable {
             deviceId: session.deviceId,
             schemaHash: schemaHash,
             descriptor: syncDescriptor,
-            telemetry: telemetry
+            telemetry: telemetry,
+            storage: storage
         )
         Task { await socket.connect() }
         return socket
