@@ -558,6 +558,27 @@ public final class FrickSQLiteStorage: FrickStorage, @unchecked Sendable {
         return rows.first?.first?.data
     }
 
+    /// Lists every locally-cached object of `type` as `(id, json)` pairs — the
+    /// list-by-type companion to `loadObjectData`. Reads through the same
+    /// serialized connection lock, so it is safe against concurrent writes.
+    ///
+    /// Added for RangerCRM's local-only persistence mode: a store can hydrate a
+    /// complete snapshot straight from the on-device cache with no sync socket.
+    public func loadAllObjects(type: String) throws -> [(id: String, json: Data)] {
+        lock.lock()
+        defer { lock.unlock() }
+        let rows = try query(
+            "SELECT object_id, json FROM local_objects WHERE object_type = ?",
+            bindings: [.text(type)]
+        )
+        return rows.compactMap { row in
+            guard let id = row[0].text, let json = row[1].data else {
+                return nil
+            }
+            return (id: id, json: json)
+        }
+    }
+
     public func saveObjectData(type: String, id: String, data: Data, version: Int) throws {
         lock.lock()
         defer { lock.unlock() }
