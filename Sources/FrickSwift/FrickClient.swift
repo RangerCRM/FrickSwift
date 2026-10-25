@@ -5,6 +5,34 @@ import os
 public struct FrickSchemaMismatchError: Error, Equatable, Sendable {
     public let expectedSchemaHash: String
     public let actualSchemaHash: String?
+    /// The server URL that returned the mismatched hash, when known. Makes
+    /// "pointed at the wrong server" obvious from the error message alone.
+    public let serverURL: URL?
+
+    public init(expectedSchemaHash: String, actualSchemaHash: String?, serverURL: URL? = nil) {
+        self.expectedSchemaHash = expectedSchemaHash
+        self.actualSchemaHash = actualSchemaHash
+        self.serverURL = serverURL
+    }
+}
+
+extension FrickSchemaMismatchError: LocalizedError {
+    public var errorDescription: String? {
+        var message = "Frick schema mismatch: client expects \(expectedSchemaHash), server sent \(actualSchemaHash ?? "no hash")"
+        if let host = serverURL.flatMap(Self.origin(of:)) {
+            message += " (\(host))"
+        }
+        return message + "."
+    }
+
+    public var recoverySuggestion: String? {
+        "Check that the app is pointed at a server running the same schema version (FRICK_ENDPOINT / FrickEndpoint)."
+    }
+
+    private static func origin(of url: URL) -> String? {
+        guard let scheme = url.scheme, let host = url.host() else { return nil }
+        return url.port.map { "\(scheme)://\(host):\($0)" } ?? "\(scheme)://\(host)"
+    }
 }
 
 /// Lenient envelope for `GET /objects`: decodes the row array as raw JSON
@@ -2406,7 +2434,8 @@ public final class FrickClient: Sendable {
         guard hashHeader == nil || hashHeader == schemaHash else {
             throw FrickSchemaMismatchError(
                 expectedSchemaHash: schemaHash,
-                actualSchemaHash: hashHeader
+                actualSchemaHash: hashHeader,
+                serverURL: httpResponse.url
             )
         }
     }
