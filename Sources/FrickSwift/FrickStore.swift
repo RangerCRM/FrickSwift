@@ -259,6 +259,23 @@ open class FrickStore<Model: FrickModel> {
         if changed { reemit() }
     }
 
+    // MARK: Client-side eviction
+
+    /// Drop cached rows by id without waiting for the server — for when the
+    /// app learns out-of-band that rows are no longer readable (e.g. a share
+    /// was revoked and the `.objectsRemoved` push was missed). Unknown ids are
+    /// ignored; re-emits only when something was actually dropped.
+    ///
+    /// This only touches the in-memory cache. A later snapshot or delta that
+    /// carries an evicted id re-inserts it, so the server stays authoritative.
+    public func evict(ids: Set<String>) {
+        var changed = false
+        for id in ids where byId.removeValue(forKey: id) != nil {
+            changed = true
+        }
+        if changed { reemit() }
+    }
+
     /// Rebuild the sorted `items` array from the index. Reassigning `items`
     /// (even when membership is unchanged but a row was edited in place) is
     /// what forces SwiftUI observation to fire — invariant (1) above.

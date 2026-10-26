@@ -202,6 +202,42 @@ final class FrickStoreTests: XCTestCase {
         XCTAssertEqual(store.items.map(\.id), ["1"])
     }
 
+    func testEvictDropsRowsWithoutServerEvent() async {
+        let source = StubEventSource()
+        let store = FrickStore<WidgetModel>(source: source, sort: { $0.name < $1.name })
+        store.start()
+        await waitUntil { !source.subscribedTypes.isEmpty }
+
+        source.emit(.objectsDelta(records: [
+            widget("1", name: "Apple"),
+            widget("2", name: "Banana"),
+            widget("3", name: "Cherry"),
+        ], cursor: 1))
+        await waitUntil { store.items.count == 3 }
+
+        store.evict(ids: ["1", "3", "999"])
+
+        XCTAssertEqual(store.items.map(\.id), ["2"])
+    }
+
+    func testEvictedRowReturnsOnLaterDelta() async {
+        let source = StubEventSource()
+        let store = FrickStore<WidgetModel>(source: source)
+        store.start()
+        await waitUntil { !source.subscribedTypes.isEmpty }
+
+        source.emit(.objectsDelta(records: [widget("1", name: "Apple")], cursor: 1))
+        await waitUntil { store.items.count == 1 }
+
+        store.evict(ids: ["1"])
+        XCTAssertTrue(store.items.isEmpty)
+
+        source.emit(.objectsDelta(records: [widget("1", name: "Apple")], cursor: 2))
+        await waitUntil { store.items.count == 1 }
+
+        XCTAssertEqual(store.items.map(\.id), ["1"])
+    }
+
     func testIgnoresRecordsForOtherTypes() async {
         let source = StubEventSource()
         let store = FrickStore<WidgetModel>(source: source)
