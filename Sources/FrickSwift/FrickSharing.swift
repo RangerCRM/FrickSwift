@@ -43,6 +43,12 @@ public struct FrickInvitation: Codable, Sendable, Equatable, Identifiable {
     /// Optional — absent while pending / on older servers.
     public let redeemedByEmail: String?
 
+    ///FIX: the email the owner said this invitation is FOR, set via
+    /// `createInvitation(…, inviteeEmail:)`. Lets the sender group pending
+    /// invitations by person. Informational only — any signed-in user holding
+    /// the token can still redeem it. Optional — absent on older servers.
+    public let inviteeEmail: String?
+
     public init(
         id: String,
         tenantId: String,
@@ -58,7 +64,8 @@ public struct FrickInvitation: Codable, Sendable, Equatable, Identifiable {
         declinedAt: String? = nil,
         declinedByUserId: String? = nil,
         status: String? = nil,
-        redeemedByEmail: String? = nil
+        redeemedByEmail: String? = nil,
+        inviteeEmail: String? = nil
     ) {
         self.id = id
         self.tenantId = tenantId
@@ -75,6 +82,7 @@ public struct FrickInvitation: Codable, Sendable, Equatable, Identifiable {
         self.declinedByUserId = declinedByUserId
         self.status = status
         self.redeemedByEmail = redeemedByEmail
+        self.inviteeEmail = inviteeEmail
     }
 }
 
@@ -147,6 +155,7 @@ struct CreateInvitationBody: Encodable {
     let recordId: String
     let permission: FrickSharingPermission
     let expiresInSeconds: Int?
+    let inviteeEmail: String?
 }
 
 

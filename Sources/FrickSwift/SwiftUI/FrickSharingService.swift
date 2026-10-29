@@ -246,7 +246,8 @@ public final class FrickSharingService {
         recordType: String,
         recordId: String,
         permission: FrickSharingPermission,
-        expiresIn: TimeInterval? = nil
+        expiresIn: TimeInterval? = nil,
+        inviteeEmail: String? = nil
     ) async throws -> URL {
         isWorking = true
         defer { isWorking = false }
@@ -255,7 +256,8 @@ public final class FrickSharingService {
                 recordType: recordType,
                 recordId: recordId,
                 permission: permission,
-                expiresIn: expiresIn
+                expiresIn: expiresIn,
+                inviteeEmail: inviteeEmail
             )
             guard let url = deepLink.acceptURL(for: invitation.token) else {
                 throw FrickSharingError.couldNotBuildAcceptURL(token: invitation.token)

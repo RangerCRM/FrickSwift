@@ -2000,18 +2000,23 @@ public final class FrickClient: Sendable {
     ///
     /// - Parameter expiresIn: Lifetime in seconds. `nil` uses the server
     ///   default (14 days). The server clamps to a 90-day ceiling.
+    /// - Parameter inviteeEmail: Who the invitation is for. Stored and echoed
+    ///   back on ``FrickInvitation/inviteeEmail`` so the sender can group
+    ///   pending invitations by person; it does not restrict who can redeem.
     public func createInvitation(
         recordType: String,
         recordId: String,
         permission: FrickSharingPermission,
-        expiresIn: TimeInterval? = nil
+        expiresIn: TimeInterval? = nil,
+        inviteeEmail: String? = nil
     ) async throws -> FrickInvitation {
         _ = try requireAuthenticatedSession()
         let body = CreateInvitationBody(
             recordType: recordType,
             recordId: recordId,
             permission: permission,
-            expiresInSeconds: expiresIn.map { Int($0) }
+            expiresInSeconds: expiresIn.map { Int($0) },
+            inviteeEmail: inviteeEmail
         )
         var request = URLRequest(url: baseURL.appending(path: "share").appending(path: "invite"))
         request.httpMethod = "POST"

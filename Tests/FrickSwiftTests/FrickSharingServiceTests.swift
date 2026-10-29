@@ -120,6 +120,38 @@ final class FrickSharingServiceTests: XCTestCase {
         }
     }
 
+    func testCreateInvitationBodyCarriesInviteeEmailOnlyWhenSet() throws {
+        let encoder = JSONEncoder()
+
+        let withEmail = CreateInvitationBody(
+            recordType: "Account", recordId: "rec-1", permission: .read,
+            expiresInSeconds: nil, inviteeEmail: "bob@example.com"
+        )
+        let withJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoder.encode(withEmail)) as? [String: Any]
+        )
+        XCTAssertEqual(withJSON["inviteeEmail"] as? String, "bob@example.com")
+
+        let without = CreateInvitationBody(
+            recordType: "Account", recordId: "rec-1", permission: .read,
+            expiresInSeconds: nil, inviteeEmail: nil
+        )
+        let withoutJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoder.encode(without)) as? [String: Any]
+        )
+        XCTAssertNil(withoutJSON["inviteeEmail"], "nil inviteeEmail must be omitted for older servers")
+    }
+
+    func testInvitationDecodesInviteeEmail() throws {
+        let json = """
+        {"id":"inv-1","tenantId":"_default","ownerUserId":"user-ada","recordType":"Account",
+         "recordId":"rec-1","permission":"read","token":"tok","createdAt":"2026-10-28T00:00:00.000Z",
+         "expiresAt":"2026-11-11T00:00:00.000Z","status":"pending","inviteeEmail":"bob@example.com"}
+        """
+        let invitation = try JSONDecoder().decode(FrickInvitation.self, from: Data(json.utf8))
+        XCTAssertEqual(invitation.inviteeEmail, "bob@example.com")
+    }
+
     // MARK: - accept (recipient)
 
     func testAcceptRedeemsTokenAndReturnsGrantDetails() async {
