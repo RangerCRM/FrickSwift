@@ -1,0 +1,14 @@
+FrickSwift
+Copyright 2026 Brianna Zamora
+
+This product is the Swift client from Frick
+(https://github.com/briannadoubt/Frick, packages/swift), licensed under the
+Apache License, Version 2.0. See the LICENSE file.
+
+This copy (https://github.com/RangerCRM/FrickSwift) was modified by
+Ranger Technologies Ltd. in 2026, starting from FrickSwift 0.8.0. The changes
+add sharing and invitation support (device registration, declining and
+leaving shares, sent-invitation lists and cancellation, owner, grantee and
+sender names and emails, optional invitee email), Sign in with Apple on
+FrickSessionManager, the FrickLocalObjectSink, and the tests that cover them.
+Each modified or added file carries a notice saying so.

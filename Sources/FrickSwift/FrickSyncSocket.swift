@@ -1,3 +1,6 @@
+// Modified by Ranger Technologies Ltd., 2026. See NOTICE.
+// Part of FrickSwift, licensed under the Apache License, Version 2.0.
+
 import Foundation
 
 // MARK: - FrameKind
