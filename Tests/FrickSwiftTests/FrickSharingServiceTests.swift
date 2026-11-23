@@ -303,6 +303,28 @@ final class FrickSharingServiceTests: XCTestCase {
         XCTAssertEqual(sharing.ownersWithGrantsToMe(recordType: "Account"), ["user-zoe"])
     }
 
+    // MARK: - installPreviewState (DEBUG)
+
+    #if DEBUG
+    func testInstallPreviewStateFillsCacheWithoutNetwork() {
+        let sharing = makeSharing(signedInAs: "user-ada")
+
+        sharing.installPreviewState(
+            grants: [
+                makeGrant(id: "g1", owner: "user-ada", grantee: "user-bob", recordId: "rec-1"),
+                makeGrant(id: "g2", owner: "user-zoe", grantee: "user-ada", recordId: "rec-2")
+            ],
+            sentInvitations: [makeInvitation(token: "tok-1", owner: "user-ada")]
+        )
+
+        XCTAssertTrue(sharing.hasLoaded)
+        XCTAssertNil(sharing.lastError)
+        XCTAssertEqual(sharing.sentInvitations.map(\.token), ["tok-1"])
+        XCTAssertTrue(sharing.userOwnsGrants(forRecordType: "Account", recordId: "rec-1"))
+        XCTAssertEqual(sharing.granteeAccess(forRecordType: "Account", recordId: "rec-2")?.id, "g2")
+    }
+    #endif
+
     // MARK: - Observation
 
     func testGrantsMutationIsObservable() async {

@@ -239,6 +239,24 @@ public final class FrickSharingService {
         pendingAcceptToken = nil
     }
 
+    #if DEBUG
+    /// Installs canned grants and sent invitations without a server round
+    /// trip, and marks the cache loaded. For sample-data and screenshot
+    /// launches that run with no backend, where ``refreshGrants()`` could
+    /// never fill the cache. The read helpers still gate on the session's
+    /// `userId`, so install a session whose user owns or receives these
+    /// grants. DEBUG builds only.
+    public func installPreviewState(
+        grants: [FrickGrant],
+        sentInvitations: [FrickInvitation] = []
+    ) {
+        self.grants = grants
+        self.sentInvitations = sentInvitations
+        hasLoaded = true
+        lastError = nil
+    }
+    #endif
+
     // MARK: - Owner verbs
 
     /// Create an invitation for the given record and return the deep-link URL
