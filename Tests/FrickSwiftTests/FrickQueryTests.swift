@@ -1,3 +1,6 @@
+// Modified by Ranger Technologies Ltd., 2026. See NOTICE.
+// Part of FrickSwift, licensed under the Apache License, Version 2.0.
+
 #if canImport(SwiftUI) && canImport(Combine)
 import XCTest
 @testable import FrickSwift
@@ -29,6 +32,25 @@ final class FrickQueryTests: XCTestCase {
 
     private func model(_ id: String, _ name: String) -> WidgetModel {
         WidgetModel(record: queryWidget(id, name: name))!
+    }
+
+    // MARK: Data-arrival animation
+
+    func testAnimatorReturnsStoreRowsAndFollowsChanges() async {
+        let source = StubEventSource()
+        let store = FrickStore<WidgetModel>(source: source)
+        let animator = FrickQueryAnimator<WidgetModel>()
+        XCTAssertEqual(animator.items(from: store, animation: .default).count, 0)
+
+        store.start()
+        source.emit(.objectsDelta(records: [queryWidget("1", name: "Apple")], cursor: 1))
+        let deadline = Date().addingTimeInterval(2)
+        while animator.revision == 0, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+
+        XCTAssertEqual(animator.revision, 1)
+        XCTAssertEqual(animator.items(from: store, animation: .default).map(\.id), ["1"])
     }
 
     func testIsRandomAccessCollectionOverItems() {

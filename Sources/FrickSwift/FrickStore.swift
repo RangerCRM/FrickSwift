@@ -116,6 +116,15 @@ open class FrickStore<Model: FrickModel> {
     /// id → model index, kept in lock-step with `items` for O(1) merges.
     @ObservationIgnored private var byId: [String: Model] = [:]
 
+    /// The same collection as ``items``, readable without registering an
+    /// observation. ``FrickQuery`` reads this when it animates changes itself
+    /// (see ``observeItems(owner:_:)``), so the view isn't also re-rendered,
+    /// unanimated, by observing ``items`` directly.
+    @ObservationIgnored public private(set) var untrackedItems: [Model] = []
+
+    /// Handlers registered through ``observeItems(owner:_:)``.
+    @ObservationIgnored private var itemsHandlers: [ItemsHandler] = []
+
     @ObservationIgnored private let source: FrickStoreEventSource
     @ObservationIgnored private let sort: @MainActor (Model, Model) -> Bool
     @ObservationIgnored private var listenerTask: Task<Void, Never>?
@@ -154,8 +163,8 @@ open class FrickStore<Model: FrickModel> {
     public func reset() {
         listenerTask?.cancel()
         listenerTask = nil
-        items = []
         byId = [:]
+        publish([])
         hasBootstrapped = false
         lastError = nil
     }
@@ -283,6 +292,46 @@ open class FrickStore<Model: FrickModel> {
     /// (even when membership is unchanged but a row was edited in place) is
     /// what forces SwiftUI observation to fire — invariant (1) above.
     private func reemit() {
-        items = byId.values.sorted(by: sort)
+        publish(byId.values.sorted(by: sort))
+    }
+
+    /// Set ``items`` and ``untrackedItems`` together, then tell every
+    /// ``observeItems(owner:_:)`` handler, synchronously, that they changed.
+    private func publish(_ newItems: [Model]) {
+        untrackedItems = newItems
+        items = newItems
+        itemsHandlers.removeAll { $0.owner == nil }
+        for entry in itemsHandlers {
+            entry.handler()
+        }
+    }
+
+    // MARK: Change handlers
+
+    /// Call `handler` on the main actor each time ``items`` is reassigned,
+    /// right after the new value is in place, for as long as `owner` is alive.
+    ///
+    /// Unlike Observation, which reports a change before it happens, this
+    /// runs after it, so a handler can apply the change inside a transaction.
+    /// ``FrickQuery`` uses it to animate newly arrived data. The store holds
+    /// `owner` weakly and drops the handler once `owner` is released.
+    /// Registering again for the same owner replaces its handler.
+    public func observeItems(
+        owner: AnyObject,
+        _ handler: @escaping @MainActor () -> Void
+    ) {
+        itemsHandlers.removeAll { $0.owner == nil || $0.owner === owner }
+        itemsHandlers.append(ItemsHandler(owner: owner, handler: handler))
+    }
+
+    /// Stop calling the handler registered for `owner`. Idempotent.
+    public func removeItemsObserver(owner: AnyObject) {
+        itemsHandlers.removeAll { $0.owner == nil || $0.owner === owner }
+    }
+
+    /// A handler from ``observeItems(owner:_:)`` and the object it lives as long as.
+    private struct ItemsHandler {
+        weak var owner: AnyObject?
+        let handler: @MainActor () -> Void
     }
 }

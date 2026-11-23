@@ -1,7 +1,15 @@
+// Modified by Ranger Technologies Ltd., 2026. See NOTICE.
+// Part of FrickSwift, licensed under the Apache License, Version 2.0.
+
 #if canImport(SwiftUI) && canImport(Combine)
 import SwiftUI
 import Combine
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - FrickQuery
 
@@ -40,6 +48,14 @@ import Foundation
 /// (or no store has registered for `Item` yet), so previews render without
 /// crashing — mirroring the old bridge's `?? []` pass-through.
 ///
+/// Like `@FetchRequest`, a non-nil `animation` applies to newly arrived data
+/// as well as to sort and filter changes. Each time the store's rows change (a
+/// snapshot, a sync delta, an eviction, an edit), the view updates inside that
+/// animation, so the rows *and* everything laid out around them move together,
+/// including rows a view's own filter adds or drops because a field changed.
+/// Nothing animates when the system's Reduce Motion setting is on. Data
+/// already in the store when the view first appears shows at once.
+///
 /// `sortDescriptors` and `filter` are write-through (`results.sortDescriptors
 /// = …` keeps working), and `projectedValue` is a `Binding` into the sort
 /// descriptors so sort-picker UIs can drive them through `$accounts`.
@@ -54,6 +70,10 @@ public struct FrickQuery<Item: FrickModel>: DynamicProperty {
     @State private var sortDescriptors: [FrickSort<Item>]
     @State private var filter: ((Item) -> Bool)?
 
+    /// Re-renders the view inside `animation` when the store's rows change.
+    /// Only used when `animation` is non-nil.
+    @State private var animator: FrickQueryAnimator<Item>
+
     public init(
         sortDescriptors: [FrickSort<Item>] = [],
         filter: ((Item) -> Bool)? = nil,
@@ -62,6 +82,7 @@ public struct FrickQuery<Item: FrickModel>: DynamicProperty {
         self.animation = animation
         _sortDescriptors = State(initialValue: sortDescriptors)
         _filter = State(initialValue: filter)
+        _animator = State(initialValue: FrickQueryAnimator<Item>())
     }
 
     /// Convenience mirroring a common `@FetchRequest` shape: ascending by a
@@ -77,7 +98,12 @@ public struct FrickQuery<Item: FrickModel>: DynamicProperty {
     }
 
     public var wrappedValue: FrickQueryResults<Item> {
-        let snapshot = registry?.items(for: Item.self) ?? []
+        let snapshot: [Item]
+        if let animation, let store = registry?.store(for: Item.self) {
+            snapshot = animator.items(from: store, animation: animation)
+        } else {
+            snapshot = registry?.items(for: Item.self) ?? []
+        }
         let currentSort = sortDescriptors
         let currentFilter = filter
         let animation = animation
@@ -115,6 +141,59 @@ public struct FrickQuery<Item: FrickModel>: DynamicProperty {
                 }
             }
         )
+    }
+}
+
+// MARK: - FrickQueryAnimator
+
+/// Drives `@FrickQuery`'s animation of newly arrived data.
+///
+/// The view reads the store's rows through ``FrickStore/untrackedItems``, so
+/// it isn't observing ``FrickStore/items`` and isn't re-rendered, unanimated,
+/// the moment they change. Instead the store calls back after each change
+/// (``FrickStore/observeItems(owner:_:)``) and this bumps ``revision``, which
+/// the view *does* observe, inside the query's animation.
+@MainActor
+@Observable
+final class FrickQueryAnimator<Item: FrickModel> {
+
+    /// Bumped once per store change. Reading it is what makes the view re-render.
+    private(set) var revision = 0
+
+    @ObservationIgnored private weak var store: FrickStore<Item>?
+    @ObservationIgnored private var animation: Animation?
+
+    /// The store's current rows. Subscribes to `store` the first time it's
+    /// seen (or when the registry hands over a new store, e.g. after sign-in).
+    func items(from store: FrickStore<Item>, animation: Animation) -> [Item] {
+        self.animation = animation
+        if store !== self.store {
+            self.store?.removeItemsObserver(owner: self)
+            self.store = store
+            store.observeItems(owner: self) { [weak self] in
+                self?.storeDidChange()
+            }
+        }
+        _ = revision
+        return store.untrackedItems
+    }
+
+    private func storeDidChange() {
+        if let animation, !Self.isReduceMotionEnabled {
+            withAnimation(animation) { revision &+= 1 }
+        } else {
+            revision &+= 1
+        }
+    }
+
+    private static var isReduceMotionEnabled: Bool {
+        #if canImport(UIKit) && !os(watchOS)
+        UIAccessibility.isReduceMotionEnabled
+        #elseif canImport(AppKit)
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #else
+        false
+        #endif
     }
 }
 

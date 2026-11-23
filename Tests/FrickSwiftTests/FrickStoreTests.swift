@@ -395,4 +395,79 @@ final class FrickStoreTests: XCTestCase {
         await waitUntil { store.lastError == "boom" }
         XCTAssertEqual(store.lastError, "boom")
     }
+
+    // MARK: Item-change handlers
+
+    func testUntrackedItemsMirrorsItems() async {
+        let source = StubEventSource()
+        let store = FrickStore<WidgetModel>(source: source, sort: { $0.name < $1.name })
+        store.start()
+        await waitUntil { !source.subscribedTypes.isEmpty }
+
+        source.emit(.objectsDelta(records: [
+            widget("2", name: "Banana"),
+            widget("1", name: "Apple"),
+        ], cursor: 1))
+        await waitUntil { store.items.count == 2 }
+
+        XCTAssertEqual(store.untrackedItems.map(\.id), store.items.map(\.id))
+    }
+
+    func testObserveItemsRunsAfterTheNewItemsAreInPlace() async {
+        let source = StubEventSource()
+        let store = FrickStore<WidgetModel>(source: source)
+        let owner = NSObject()
+        var seen: [[String]] = []
+        store.observeItems(owner: owner) {
+            seen.append(store.untrackedItems.map(\.id))
+        }
+        store.start()
+        await waitUntil { !source.subscribedTypes.isEmpty }
+
+        source.emit(.objectsDelta(records: [widget("1", name: "Apple")], cursor: 1))
+        await waitUntil { seen.count == 1 }
+        source.emit(.objectsRemoved(removed: [FrickObjectRemoval(type: "Widget", id: "1")], cursor: 2))
+        await waitUntil { seen.count == 2 }
+
+        XCTAssertEqual(seen, [["1"], []])
+    }
+
+    func testObserveItemsStopsWhenOwnerIsReleasedOrRemoved() async {
+        let source = StubEventSource()
+        let store = FrickStore<WidgetModel>(source: source)
+        var released: NSObject? = NSObject()
+        let removed = NSObject()
+        var releasedCalls = 0
+        var removedCalls = 0
+        store.observeItems(owner: released!) { releasedCalls += 1 }
+        store.observeItems(owner: removed) { removedCalls += 1 }
+        store.start()
+        await waitUntil { !source.subscribedTypes.isEmpty }
+
+        released = nil
+        store.removeItemsObserver(owner: removed)
+        source.emit(.objectsDelta(records: [widget("1", name: "Apple")], cursor: 1))
+        await waitUntil { store.items.count == 1 }
+
+        XCTAssertNil(released)
+        XCTAssertEqual(releasedCalls, 0)
+        XCTAssertEqual(removedCalls, 0)
+    }
+
+    func testResetNotifiesItemsObservers() async {
+        let source = StubEventSource()
+        let store = FrickStore<WidgetModel>(source: source)
+        let owner = NSObject()
+        var calls = 0
+        store.observeItems(owner: owner) { calls += 1 }
+        store.start()
+        await waitUntil { !source.subscribedTypes.isEmpty }
+        source.emit(.objectsDelta(records: [widget("1", name: "Apple")], cursor: 1))
+        await waitUntil { calls == 1 }
+
+        store.reset()
+
+        XCTAssertEqual(calls, 2)
+        XCTAssertTrue(store.untrackedItems.isEmpty)
+    }
 }

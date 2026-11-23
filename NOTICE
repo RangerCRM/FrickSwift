@@ -10,5 +10,6 @@ Ranger Technologies Ltd. in 2026, starting from FrickSwift 0.8.0. The changes
 add sharing and invitation support (device registration, declining and
 leaving shares, sent-invitation lists and cancellation, owner, grantee and
 sender names and emails, optional invitee email), Sign in with Apple on
-FrickSessionManager, the FrickLocalObjectSink, and the tests that cover them.
+FrickSessionManager, the FrickLocalObjectSink, animation of newly arrived
+data in FrickQuery, and the tests that cover them.
 Each modified or added file carries a notice saying so.
